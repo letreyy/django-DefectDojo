@@ -24,7 +24,7 @@ jobs:
         env:
           DD_TOKEN: ${{ secrets.DD_TOKEN }}
         run: |
-          curl -X POST http://http://185.178.44.115/:8080/api/v2/import-scan/ \
+          curl -X POST http://185.178.44.115/:8080/api/v2/import-scan/ \
             -H "Authorization: Token $DD_TOKEN" \
             -F "file=@bandit-report.json" \
             -F "scan_type=Bandit Scan" \
