@@ -1,0 +1,29 @@
+name: CI/CD Deploy to DefectDojo VPS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          echo "${{ secrets.SSH_KEY }}" > private_key
+          chmod 600 private_key
+
+      - name: Deploy via SSH
+        run: |
+          ssh -i private_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            cd /path/to/defectdojo
+            git pull origin main
+            docker compose pull
+            docker compose down
+            docker compose up -d
+          EOF
