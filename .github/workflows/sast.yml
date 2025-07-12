@@ -3,10 +3,12 @@ name: SAST Scan
 on:
   push:
     branches: [ master, main ]
+  workflow_dispatch:
 
 jobs:
   run-bandit:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -18,17 +20,32 @@ jobs:
 
       - name: Run Bandit
         run: |
-          bandit -r dojo -f json -o bandit-report.json
+          bandit -r . -f json -o bandit-report.json || true
+        # Пояснение: || true — не завершать workflow ошибкой, если найдены уязвимости
 
-      - name: Upload to DefectDojo
+      - name: Upload Bandit Report to DefectDojo
         env:
           DD_TOKEN: ${{ secrets.DD_TOKEN }}
         run: |
-          curl -X POST http://185.178.44.115:8080/api/v2/import-scan/ \
+          echo "Uploading Bandit scan result to DefectDojo..."
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://185.178.44.115:8080/api/v2/import-scan/ \
             -H "Authorization: Token $DD_TOKEN" \
             -F "file=@bandit-report.json" \
             -F "scan_type=Bandit Scan" \
             -F "engagement=2" \
             -F "minimum_severity=Low" \
             -F "active=true" \
-            -F "verified=true"
+            -F "verified=true")
+
+          if [ "$RESPONSE" -eq "201" ]; then
+            echo "✅ Report uploaded successfully"
+          else
+            echo "❌ Failed to upload report to DefectDojo. HTTP Status: $RESPONSE"
+            exit 1
+          fi
+
+      - name: Upload Bandit Report as Artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
