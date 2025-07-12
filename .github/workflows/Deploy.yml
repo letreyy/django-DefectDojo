@@ -40,9 +40,9 @@ jobs:
             git pull origin master
 
             echo "🐳 Перезапуск Docker Compose"
-            docker compose pull
-            docker compose down
-            docker compose up -d
+            docker-compose pull
+            docker-compose down
+            docker-compose up -d
 
             echo "✅ Деплой завершён успешно"
           EOF
