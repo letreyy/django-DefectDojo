@@ -10,9 +10,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Создать рабочую директорию
+        run: mkdir -p zap
+      
       - name: Run OWASP ZAP Full Scan
         run: |
-          docker run --rm -v $(pwd):/zap/wrk/:rw \
+          docker run --rm \
+            -u root \
+            -v $(pwd):/zap/wrk/:rw \
             ghcr.io/zaproxy/zaproxy:stable zap-full-scan.py \
             -t http://185.178.44.115:8080 \
             -r zap-report.html \
@@ -26,7 +31,7 @@ jobs:
           echo "Uploading scan result to DefectDojo..."
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://185.178.44.115:8080/api/v2/import-scan/ \
             -H "Authorization: Token $DD_TOKEN" \
-            -F "file=@zap-report.xml" \
+            -F "file=@zap/zap-report.xml" \
             -F "scan_type=ZAP Scan" \
             -F "engagement=1" \
             -F "minimum_severity=Low" \
