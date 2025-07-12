@@ -1,0 +1,48 @@
+name: CI/CD Deploy to DefectDojo VPS
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          echo "${{ secrets.SSH_KEY }}" > private_key
+          chmod 600 private_key
+
+      - name: Deploy via SSH
+        run: |
+          ssh -i private_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            set -e
+
+            echo "🔎 Проверка: кто и где"
+            whoami
+            hostname
+            pwd
+
+            echo "📁 Проверка: существует ли директория проекта"
+            if [ ! -d django-DefectDojo ]; then
+              echo "⚠️ Каталог не найден, клонируем..."
+              git clone git@github.com:${{ github.repository }}.git django-DefectDojo
+            fi
+
+            cd django-DefectDojo
+
+            echo "📦 Обновляем код из ветки master"
+            git pull origin master
+
+            echo "🐳 Перезапуск Docker Compose"
+            docker compose pull
+            docker compose down
+            docker compose up -d
+
+            echo "✅ Деплой завершён успешно"
+          EOF
