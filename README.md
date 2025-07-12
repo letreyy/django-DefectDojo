@@ -78,7 +78,7 @@ docker/setEnv.sh
 
 Navigate to `http://localhost:8080` to see your new instance!
 
-## Documentation
+## Documentation_
 
 * [Official Docs](https://docs.defectdojo.com/)
 * [REST APIs](https://docs.defectdojo.com/en/open_source/api-v2-docs/)
