@@ -31,7 +31,7 @@ jobs:
           echo "Uploading scan result to DefectDojo..."
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://185.178.44.115:8080/api/v2/import-scan/ \
             -H "Authorization: Token $DD_TOKEN" \
-            -F "file=@zap/zap-report.xml" \
+            -F "file=@zap-report.xml" \
             -F "scan_type=ZAP Scan" \
             -F "engagement=1" \
             -F "minimum_severity=Low" \
