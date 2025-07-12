@@ -31,7 +31,7 @@ jobs:
             echo "📁 Проверка: существует ли директория проекта"
             if [ ! -d django-DefectDojo ]; then
               echo "⚠️ Каталог не найден, клонируем..."
-              git clone git@github.com:${{ github.repository }}.git django-DefectDojo
+              git clone https://github.com/${{ github.repository }}.git django-DefectDojo
             fi
 
             cd django-DefectDojo
