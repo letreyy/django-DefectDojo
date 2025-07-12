@@ -28,7 +28,7 @@ jobs:
             -H "Authorization: Token $DD_TOKEN" \
             -F "file=@bandit-report.json" \
             -F "scan_type=Bandit Scan" \
-            -F "engagement=1" \
+            -F "engagement=2" \
             -F "minimum_severity=Low" \
             -F "active=true" \
             -F "verified=true"
