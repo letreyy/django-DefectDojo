@@ -21,28 +21,16 @@ jobs:
       - name: Deploy via SSH
         run: |
           ssh -i private_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            set -e
-
-            echo "🔎 Проверка: кто и где"
-            whoami
-            hostname
-            pwd
-
-            echo "📁 Проверка: существует ли директория проекта"
-            if [ ! -d django-DefectDojo ]; then
-              echo "⚠️ Каталог не найден, клонируем..."
-              git clone https://github.com/${{ github.repository }}.git django-DefectDojo
-            fi
-
-            cd django-DefectDojo
-
-            echo "📦 Обновляем код из ветки master"
+            cd django-DefectDojo/
+            
+            # Подменим origin на твой форк
+            git remote set-url origin https://github.com/letreyy/django-DefectDojo.git
+            
+            # Обновим код
             git pull origin master
-
-            echo "🐳 Перезапуск Docker Compose"
-            docker-compose pull
-            docker-compose down
-            docker-compose up -d
-
-            echo "✅ Деплой завершён успешно"
+            
+            # Перезапуск контейнеров
+            docker compose pull
+            docker compose down
+            docker compose up -d
           EOF
