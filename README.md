@@ -30,7 +30,7 @@
 vulnerability management tool.  DefectDojo orchestrates end-to-end security testing, vulnerability tracking,
 deduplication, remediation, and reporting.
 
-## Demo+
+## Demo
 
 Try out DefectDojo on our demo server at [demo.defectdojo.org](https://demo.defectdojo.org)
 
