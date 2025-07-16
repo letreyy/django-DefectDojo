@@ -13,44 +13,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH private key
+      - name: Setup SSH key
         run: |
           echo "${{ secrets.SSH_KEY }}" > private_key
           chmod 600 private_key
 
-      - name: Add GitHub to known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
-
-      - name: Deploy to VPS
+      - name: Deploy via SSH
         run: |
           ssh -i private_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            set -e
-
-            echo "[INFO] Настройка SSH ключа для доступа к GitHub"
-            mkdir -p ~/.ssh
-            echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
-            chmod 600 ~/.ssh/id_ed25519
-            ssh-keyscan github.com >> ~/.ssh/known_hosts
-
-            echo "[INFO] Удаление старого SSH config и создание нового"
-            rm -f ~/.ssh/config
-            cat <<EOC > ~/.ssh/config
-Host github.com
-  IdentityFile ~/.ssh/id_ed25519
-  User git
-  StrictHostKeyChecking no
-EOC
-            chmod 600 ~/.ssh/config
-
-            echo "[INFO] Переход в директорию проекта и git-перезапись"
-            cd ~/django-DefectDojo
-            git remote set-url origin git@github.com:letreyy/django-DefectDojo.git
-            git fetch origin
-            git reset --hard origin/master
-
-            echo "[INFO] Перезапуск Docker контейнеров"
+            cd django-DefectDojo/
+            
+            # Подменим origin на твой форк
+            git remote set-url origin https://github.com/letreyy/django-DefectDojo.git
+            
+            # Обновим код
+            git pull origin master
+            
+            # Перезапуск контейнеров
             docker compose pull
             docker compose down
             docker compose up -d
