@@ -13,26 +13,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH private key
+      - name: Setup SSH private key on GitHub Runner
         run: |
           echo "${{ secrets.SSH_KEY }}" > private_key
           chmod 600 private_key
 
-      - name: Add GitHub to known_hosts
+      - name: Add GitHub to known_hosts (GitHub Runner)
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-      - name: Deploy to VPS
+      - name: Deploy to VPS via SSH
         run: |
           ssh -i private_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            echo "[INFO] Установка SSH-ключа для доступа к GitHub"
             mkdir -p ~/.ssh
+            echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
             ssh-keyscan github.com >> ~/.ssh/known_hosts
 
+            echo "[INFO] Переход в каталог проекта"
             cd ~/django-DefectDojo
+
+            echo "[INFO] Обновление удалённого репозитория"
             git remote set-url origin git@github.com:letreyy/django-DefectDojo.git
             git fetch origin
             git reset --hard origin/master
+
+            echo "[INFO] Перезапуск приложения через docker compose"
             docker compose pull
             docker compose down
             docker compose up -d
