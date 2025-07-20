@@ -28,7 +28,7 @@ jobs:
             cd /root/django-DefectDojo
             git fetch origin
             git reset --hard origin/master
-            docker compose pull
-            docker compose down
-            docker compose up -d
+            docker-compose pull
+            docker-compose down
+            docker-compose up -d
           EOF
