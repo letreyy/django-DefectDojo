@@ -6,11 +6,10 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to VPS
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup SSH key
@@ -18,18 +17,17 @@ jobs:
           echo "${{ secrets.SSH_KEY }}" > private_key
           chmod 600 private_key
 
-      - name: Deploy via SSH
+      - name: Add server to known_hosts
         run: |
-          ssh -i private_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd django-DefectDojo/
-            
-            # Подменим origin на твой форк
-            git remote set-url origin https://github.com/letreyy/django-DefectDojo.git
-            
-            # Обновим код
-            git pull origin master
-            
-            # Перезапуск контейнеров
+          mkdir -p ~/.ssh
+          ssh-keyscan ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh -i private_key -o StrictHostKeyChecking=no root@${{ secrets.SSH_HOST }} << 'EOF'
+            cd /root/django-DefectDojo
+            git fetch origin
+            git reset --hard origin/master
             docker compose pull
             docker compose down
             docker compose up -d
