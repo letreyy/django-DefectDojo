@@ -1,0 +1,69 @@
+name: Security Checks
+
+on:
+  workflow_run:
+    workflows: ["CI/CD Deploy to DefectDojo VPS"]
+    types:
+      - completed
+
+jobs:
+  security-checks:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ---------- Dependency Scan ----------
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run Dependency Scan
+        run: pip-audit -o audit-report.json -f json || true
+
+      # ---------- Docker Image Scan ----------
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
+          sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
+
+      - name: Scan Docker Image
+        run: trivy image --format json --output trivy-report.json defectdojo:latest || true
+
+      # ---------- Secrets Detection ----------
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --report-format json --report-path=gitleaks-report.json
+
+      # ---------- Upload Reports to DefectDojo ----------
+      - name: Upload reports to DefectDojo
+        env:
+          DD_TOKEN: ${{ secrets.DD_TOKEN }}
+        run: |
+          DEFECTDOJO_URL="http://185.178.44.115:8080"
+          ENGAGEMENT_ID="3"
+
+          echo "Загружаем audit-report.json в DefectDojo..."
+          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_TOKEN" \
+            -F "file=@audit-report.json" \
+            -F "scan_type=Pip Audit" \
+            -F "engagement=$ENGAGEMENT_ID" || true
+
+          echo "Загружаем trivy-report.json в DefectDojo..."
+          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_TOKEN" \
+            -F "file=@trivy-report.json" \
+            -F "scan_type=Trivy Scan" \
+            -F "engagement=$ENGAGEMENT_ID" || true
+
+          echo "Загружаем gitleaks-report.json в DefectDojo..."
+          curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+            -H "Authorization: Token $DD_TOKEN" \
+            -F "file=@gitleaks-report.json" \
+            -F "scan_type=Gitleaks Scan" \
+            -F "engagement=$ENGAGEMENT_ID" || true
