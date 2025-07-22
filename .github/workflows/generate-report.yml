@@ -1,30 +1,82 @@
 name: Security Gateway
 
 on:
-  workflow_run:
-    workflows: ["SAST Scan"]
-    types:
-      - completed
+  workflow_dispatch:
+  push:
+    branches:
+      - master
 
 jobs:
   security-gateway:
+    name: Security Scan & Gateway
     runs-on: ubuntu-latest
+
     steps:
-      - name: Check DefectDojo for Critical Vulnerabilities
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Trivy
         run: |
-          echo "🔍 Checking DefectDojo for critical vulnerabilities..."
-          
-          API_URL="http://185.178.44.115:8080/api/v2/findings/?severity=Critical&active=true&verified=true&limit=1000"
-          AUTH_HEADER="Authorization: Token ${{ secrets.DD_TOKEN }}"
-          
-          RESPONSE=$(curl -s -H "$AUTH_HEADER" "$API_URL")
-          CRITICAL_COUNT=$(echo "$RESPONSE" | jq '[.results[] | select(.test.engagement == 1 or .test.engagement == 2 or .test.engagement == 3)] | length')
+          sudo apt-get update
+          sudo apt-get install -y wget jq
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.53.0_Linux-64bit.deb
+          sudo dpkg -i trivy_0.53.0_Linux-64bit.deb
 
-          echo "Critical vulnerabilities found: $CRITICAL_COUNT"
+      - name: Run Trivy FS Scan
+        run: |
+          mkdir -p trivy-reports
+          trivy fs --format json --output trivy-reports/report.json .
 
+      - name: Check for Critical Vulnerabilities
+        run: |
+          CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-reports/report.json)
+          echo "Critical vulnerabilities: $CRITICAL_COUNT"
+          echo "CRITICAL_COUNT=$CRITICAL_COUNT" >> $GITHUB_ENV
           if [ "$CRITICAL_COUNT" -gt 0 ]; then
-            echo "❌ Found $CRITICAL_COUNT critical vulnerabilities in engagements 1, 2, or 3. Blocking deployment."
+            echo "❌ Found $CRITICAL_COUNT critical vulnerabilities. Blocking deployment."
             exit 1
           fi
 
-          echo "✅ No critical vulnerabilities found. Proceeding."
+      - name: Upload Trivy Report to DefectDojo (Engagement 1)
+        run: |
+          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
+            -H "Content-Type: multipart/form-data" \
+            -F "scan_type=Trivy Scan" \
+            -F "file=@trivy-reports/report.json" \
+            -F "engagement=1" \
+            -F "active=true" \
+            -F "verified=true"
+
+      - name: Upload Trivy Report to DefectDojo (Engagement 2)
+        run: |
+          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
+            -H "Content-Type: multipart/form-data" \
+            -F "scan_type=Trivy Scan" \
+            -F "file=@trivy-reports/report.json" \
+            -F "engagement=2" \
+            -F "active=true" \
+            -F "verified=true"
+
+      - name: Upload Trivy Report to DefectDojo (Engagement 3)
+        run: |
+          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
+            -H "Content-Type: multipart/form-data" \
+            -F "scan_type=Trivy Scan" \
+            -F "file=@trivy-reports/report.json" \
+            -F "engagement=3" \
+            -F "active=true" \
+            -F "verified=true"
+
+      - name: Upload Trivy Report Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-reports/report.json
+
+      - name: Summary of Vulnerabilities
+        run: |
+          echo "### Vulnerability Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Critical Vulnerabilities: $CRITICAL_COUNT" >> $GITHUB_STEP_SUMMARY
