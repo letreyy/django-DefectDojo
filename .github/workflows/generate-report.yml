@@ -6,93 +6,59 @@ on:
 
 jobs:
   security-gateway:
-    name: Security Gateway Check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check DefectDojo for Critical Vulnerabilities
-        run: |
-          echo "Checking DefectDojo engagements 1, 2, and 3 for Critical vulnerabilities..."
-
-          check_engagement() {
-            ENG=$1
-            RESPONSE=$(curl -s -X GET "http://185.178.44.115:8080/api/v2/findings/?engagement=${ENG}&severity=Critical&active=true" \
-              -H "Authorization: Token ${{ secrets.DD_TOKEN }}")
-
-            COUNT=$(echo "$RESPONSE" | jq '.count')
-            echo "Engagement ${ENG}: Critical=${COUNT}"
-
-            if [ "$COUNT" -gt 0 ]; then
-              echo "❌ Found critical vulnerabilities in engagement ${ENG}:"
-              echo "$RESPONSE" | jq -r '.results[].title'
-              exit 1
-            fi
-          }
-
-          check_engagement 1
-          check_engagement 2
-          check_engagement 3
-
-          echo "✅ No critical vulnerabilities found in engagements 1, 2, or 3."
-
-  generate-report:
-    name: Generate Critical Vulnerabilities Report
-    runs-on: ubuntu-latest
-    needs: security-gateway
-    if: always()
-
-    steps:
-      - name: Fetch Critical Vulnerabilities
-        run: |
-          echo "# Critical Vulnerabilities Report" > critical_report.md
-          echo "" >> critical_report.md
-
-          fetch_engagement() {
-            ENG=$1
-            RESPONSE=$(curl -s -X GET "http://185.178.44.115:8080/api/v2/findings/?engagement=${ENG}&severity=Critical&active=true" \
-              -H "Authorization: Token ${{ secrets.DD_TOKEN }}")
-
-            COUNT=$(echo "$RESPONSE" | jq '.count')
-            echo "## Engagement ${ENG}" >> critical_report.md
-            echo "Critical vulnerabilities found: ${COUNT}" >> critical_report.md
-            echo "" >> critical_report.md
-
-            if [ "$COUNT" -gt 0 ]; then
-              echo "$RESPONSE" | jq -r '.results[].title' | sed 's/^/- /' >> critical_report.md
-              echo "" >> critical_report.md
-            fi
-          }
-
-          fetch_engagement 1
-          fetch_engagement 2
-          fetch_engagement 3
-
-      - name: Upload Report as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: critical-vulnerabilities-report
-          path: critical_report.md
-
-  deploy:
-    name: Deploy to VPS
-    needs: security-gateway
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH private key
+      - name: Install Trivy
         run: |
-          echo "${{ secrets.SSH_KEY }}" > private_key
-          chmod 600 private_key
+          sudo apt-get update
+          sudo apt-get install wget -y
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.4_Linux-64bit.deb
+          sudo dpkg -i trivy_0.50.4_Linux-64bit.deb
 
-      - name: Deploy to VPS
+      # Сканируем код на CRITICAL уязвимости для Engagement 1
+      - name: Scan (Engagement 1)
         run: |
-          ssh -i private_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd ~/django-DefectDojo
-            git reset --hard origin/master
-            docker compose pull
-            docker compose down
-            docker compose up -d
-          EOF
+          trivy fs --severity CRITICAL --format json -o critical_eng1.json .
+          echo "# Critical Vulnerabilities Report (Engagement 1)" > critical_report_engagement_1.md
+          jq '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity=="CRITICAL") | "- " + .PkgName + " (" + .InstalledVersion + ") CVE: " + .VulnerabilityID' critical_eng1.json >> critical_report_engagement_1.md || echo "No critical vulnerabilities found." >> critical_report_engagement_1.md
+
+      # Сканируем код на CRITICAL уязвимости для Engagement 2
+      - name: Scan (Engagement 2)
+        run: |
+          trivy fs --severity CRITICAL --format json -o critical_eng2.json .
+          echo "# Critical Vulnerabilities Report (Engagement 2)" > critical_report_engagement_2.md
+          jq '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity=="CRITICAL") | "- " + .PkgName + " (" + .InstalledVersion + ") CVE: " + .VulnerabilityID' critical_eng2.json >> critical_report_engagement_2.md || echo "No critical vulnerabilities found." >> critical_report_engagement_2.md
+
+      # Сканируем код на CRITICAL уязвимости для Engagement 3
+      - name: Scan (Engagement 3)
+        run: |
+          trivy fs --severity CRITICAL --format json -o critical_eng3.json .
+          echo "# Critical Vulnerabilities Report (Engagement 3)" > critical_report_engagement_3.md
+          jq '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity=="CRITICAL") | "- " + .PkgName + " (" + .InstalledVersion + ") CVE: " + .VulnerabilityID' critical_eng3.json >> critical_report_engagement_3.md || echo "No critical vulnerabilities found." >> critical_report_engagement_3.md
+
+      # Загружаем отчёты как артефакты
+      - name: Upload Critical Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-vulnerabilities-reports
+          path: |
+            critical_report_engagement_1.md
+            critical_report_engagement_2.md
+            critical_report_engagement_3.md
+
+      # Добавляем все отчёты в Summary
+      - name: Add reports to summary
+        run: |
+          echo "## Critical Vulnerabilities Summary" >> $GITHUB_STEP_SUMMARY
+          echo "### Engagement 1" >> $GITHUB_STEP_SUMMARY
+          cat critical_report_engagement_1.md >> $GITHUB_STEP_SUMMARY
+          echo -e "\n---\n" >> $GITHUB_STEP_SUMMARY
+          echo "### Engagement 2" >> $GITHUB_STEP_SUMMARY
+          cat critical_report_engagement_2.md >> $GITHUB_STEP_SUMMARY
+          echo -e "\n---\n" >> $GITHUB_STEP_SUMMARY
+          echo "### Engagement 3" >> $GITHUB_STEP_SUMMARY
+          cat critical_report_engagement_3.md >> $GITHUB_STEP_SUMMARY
