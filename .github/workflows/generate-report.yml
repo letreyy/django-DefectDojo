@@ -1,57 +1,30 @@
 name: Security Gateway
 
 on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+  workflow_run:
+    workflows: ["SAST Scan"]
+    types:
+      - completed
 
 jobs:
   security-gateway:
-    name: Security Gateway Check
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Trivy
+      - name: Check DefectDojo for Critical Vulnerabilities
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update
-          sudo apt-get install -y trivy
+          echo "🔍 Checking DefectDojo for critical vulnerabilities..."
+          
+          API_URL="http://185.178.44.115:8080/api/v2/findings/?severity=Critical&active=true&verified=true&limit=1000"
+          AUTH_HEADER="Authorization: Token ${{ secrets.DD_TOKEN }}"
+          
+          RESPONSE=$(curl -s -H "$AUTH_HEADER" "$API_URL")
+          CRITICAL_COUNT=$(echo "$RESPONSE" | jq '[.results[] | select(.test.engagement == 1 or .test.engagement == 2 or .test.engagement == 3)] | length')
 
-      - name: Run Trivy Scan
-        run: |
-          mkdir -p trivy-reports
-          trivy fs --format json --output trivy-reports/report.json .
+          echo "Critical vulnerabilities found: $CRITICAL_COUNT"
 
-      - name: Check Critical Vulnerabilities
-        id: check_vulns
-        run: |
-          CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities? // [] | .[] | select(.Severity == "CRITICAL")] | length' trivy-reports/report.json)
-          echo "Critical vulnerabilities: $CRITICAL_COUNT"
-          echo "CRITICAL_COUNT=$CRITICAL_COUNT" >> $GITHUB_ENV
           if [ "$CRITICAL_COUNT" -gt 0 ]; then
-            echo "❌ Found $CRITICAL_COUNT critical vulnerabilities. Blocking deployment."
+            echo "❌ Found $CRITICAL_COUNT critical vulnerabilities in engagements 1, 2, or 3. Blocking deployment."
             exit 1
           fi
 
-      - name: Upload Trivy Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-report
-          path: trivy-reports/report.json
-
-      - name: Add Summary
-        if: always()
-        run: |
-          echo "### Security Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Critical vulnerabilities found:** $CRITICAL_COUNT" >> $GITHUB_STEP_SUMMARY
-          if [ "$CRITICAL_COUNT" -gt 0 ]; then
-            echo "- **Status:** ❌ Deployment blocked due to critical vulnerabilities" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **Status:** ✅ No critical vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          echo "✅ No critical vulnerabilities found. Proceeding."
