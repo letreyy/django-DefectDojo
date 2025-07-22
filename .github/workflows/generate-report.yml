@@ -1,11 +1,14 @@
-name: CI/CD with Security Gateway
+name: Security Gateway
 
 on:
+  workflow_dispatch:
   push:
-    branches: [master]
+    branches:
+      - master
 
 jobs:
   security-gateway:
+    name: Run Security Gateway
     runs-on: ubuntu-latest
 
     steps:
@@ -15,50 +18,56 @@ jobs:
       - name: Install Trivy
         run: |
           sudo apt-get update
-          sudo apt-get install wget -y
+          sudo apt-get install wget apt-transport-https gnupg lsb-release -y
           wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.4_Linux-64bit.deb
-          sudo dpkg -i trivy_0.50.4_Linux-64bit.deb
+          sudo apt install -y ./trivy_0.50.4_Linux-64bit.deb
 
-      # Сканируем код на CRITICAL уязвимости для Engagement 1
-      - name: Scan (Engagement 1)
+      - name: Run Trivy Scan
         run: |
-          trivy fs --severity CRITICAL --format json -o critical_eng1.json .
-          echo "# Critical Vulnerabilities Report (Engagement 1)" > critical_report_engagement_1.md
-          jq '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity=="CRITICAL") | "- " + .PkgName + " (" + .InstalledVersion + ") CVE: " + .VulnerabilityID' critical_eng1.json >> critical_report_engagement_1.md || echo "No critical vulnerabilities found." >> critical_report_engagement_1.md
+          mkdir -p trivy-reports
+          trivy fs --exit-code 0 --severity HIGH,CRITICAL --format json -o trivy-reports/report.json .
 
-      # Сканируем код на CRITICAL уязвимости для Engagement 2
-      - name: Scan (Engagement 2)
+      - name: Upload to DefectDojo Engagement 1
         run: |
-          trivy fs --severity CRITICAL --format json -o critical_eng2.json .
-          echo "# Critical Vulnerabilities Report (Engagement 2)" > critical_report_engagement_2.md
-          jq '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity=="CRITICAL") | "- " + .PkgName + " (" + .InstalledVersion + ") CVE: " + .VulnerabilityID' critical_eng2.json >> critical_report_engagement_2.md || echo "No critical vulnerabilities found." >> critical_report_engagement_2.md
+          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
+            -F "engagement=1" \
+            -F "scan_type=Trivy Scan" \
+            -F "file=@trivy-reports/report.json" \
+            -F "active=true" \
+            -F "verified=true"
 
-      # Сканируем код на CRITICAL уязвимости для Engagement 3
-      - name: Scan (Engagement 3)
+      - name: Upload to DefectDojo Engagement 2
         run: |
-          trivy fs --severity CRITICAL --format json -o critical_eng3.json .
-          echo "# Critical Vulnerabilities Report (Engagement 3)" > critical_report_engagement_3.md
-          jq '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity=="CRITICAL") | "- " + .PkgName + " (" + .InstalledVersion + ") CVE: " + .VulnerabilityID' critical_eng3.json >> critical_report_engagement_3.md || echo "No critical vulnerabilities found." >> critical_report_engagement_3.md
+          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
+            -F "engagement=2" \
+            -F "scan_type=Trivy Scan" \
+            -F "file=@trivy-reports/report.json" \
+            -F "active=true" \
+            -F "verified=true"
 
-      # Загружаем отчёты как артефакты
-      - name: Upload Critical Reports
+      - name: Upload to DefectDojo Engagement 3
+        run: |
+          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
+            -F "engagement=3" \
+            -F "scan_type=Trivy Scan" \
+            -F "file=@trivy-reports/report.json" \
+            -F "active=true" \
+            -F "verified=true"
+
+      - name: Check Critical Vulnerabilities
+        run: |
+          CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[] | select(.Severity == "CRITICAL")] | length' trivy-reports/report.json)
+          echo "Critical vulnerabilities: $CRITICAL_COUNT"
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "❌ Found $CRITICAL_COUNT critical vulnerabilities. Blocking deployment."
+            exit 1
+          fi
+
+      - name: Upload Trivy Report Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: critical-vulnerabilities-reports
-          path: |
-            critical_report_engagement_1.md
-            critical_report_engagement_2.md
-            critical_report_engagement_3.md
-
-      # Добавляем все отчёты в Summary
-      - name: Add reports to summary
-        run: |
-          echo "## Critical Vulnerabilities Summary" >> $GITHUB_STEP_SUMMARY
-          echo "### Engagement 1" >> $GITHUB_STEP_SUMMARY
-          cat critical_report_engagement_1.md >> $GITHUB_STEP_SUMMARY
-          echo -e "\n---\n" >> $GITHUB_STEP_SUMMARY
-          echo "### Engagement 2" >> $GITHUB_STEP_SUMMARY
-          cat critical_report_engagement_2.md >> $GITHUB_STEP_SUMMARY
-          echo -e "\n---\n" >> $GITHUB_STEP_SUMMARY
-          echo "### Engagement 3" >> $GITHUB_STEP_SUMMARY
-          cat critical_report_engagement_3.md >> $GITHUB_STEP_SUMMARY
+          name: trivy-report
+          path: trivy-reports/report.json
