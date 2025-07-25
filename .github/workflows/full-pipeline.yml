@@ -31,7 +31,7 @@ jobs:
             -H "Authorization: Token $DD_TOKEN" \
             -F "file=@bandit-report.json" \
             -F "scan_type=Bandit Scan" \
-            -F "engagement=2" \
+            -F "engagement=4" \
             -F "minimum_severity=Low" \
             -F "active=true" \
             -F "verified=true")
@@ -48,17 +48,6 @@ jobs:
         with:
           name: bandit-report
           path: bandit-report.json
-
-      - name: Generate SAST Summary
-        run: |
-          echo "### 🛡️ SAST (Bandit) Report" >> $GITHUB_STEP_SUMMARY
-          if [ -s bandit-report.json ]; then
-            CRIT=$(jq '[.results[] | select(.issue_severity=="HIGH")] | length' bandit-report.json)
-            echo "- **High severity issues:** $CRIT" >> $GITHUB_STEP_SUMMARY
-            jq -r '.results[] | "- \(.filename):\(.line_number) - \(.issue_text)"' bandit-report.json >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ No SAST issues found." >> $GITHUB_STEP_SUMMARY
-          fi
 
   security-checks:
     name: Security Checks (Dependencies/Images)
@@ -88,7 +77,7 @@ jobs:
             -H "Content-Type: multipart/form-data" \
             -F "scan_type=Trivy Scan" \
             -F "file=@trivy-reports/report.json" \
-            -F "engagement=2" \
+            -F "engagement=3" \
             -F "active=true" \
             -F "verified=true"
 
@@ -97,17 +86,6 @@ jobs:
         with:
           name: trivy-report
           path: trivy-reports/report.json
-
-      - name: Generate Trivy Summary
-        run: |
-          echo "### 🔍 Dependency & Image Scan (Trivy)" >> $GITHUB_STEP_SUMMARY
-          CRIT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-reports/report.json)
-          echo "- **Critical vulnerabilities:** $CRIT" >> $GITHUB_STEP_SUMMARY
-          if [ "$CRIT" -gt 0 ]; then
-            jq -r '.Results[].Vulnerabilities[]? | select(.Severity=="CRITICAL") | "- \(.PkgName) (\(.InstalledVersion)) - \(.VulnerabilityID)"' trivy-reports/report.json >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ No critical vulnerabilities found." >> $GITHUB_STEP_SUMMARY
-          fi   
 
   dast:
     name: Dynamic Analysis (DAST)
@@ -136,7 +114,7 @@ jobs:
             -H "Content-Type: multipart/form-data" \
             -F "scan_type=ZAP Scan" \
             -F "file=@zap-reports/zap_report.html" \
-            -F "engagement=3" \
+            -F "engagement=5" \
             -F "active=true" \
             -F "verified=true"
 
@@ -145,15 +123,6 @@ jobs:
         with:
           name: zap-report
           path: zap-reports/zap_report.html
-
-      - name: Generate ZAP Summary
-        run: |
-          echo "### 🌐 Dynamic Analysis (OWASP ZAP)" >> $GITHUB_STEP_SUMMARY
-          if [ -f zap_report.html ]; then
-            echo "Full ZAP report available as artifact." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ No ZAP report found." >> $GITHUB_STEP_SUMMARY
-          fi
 
   gateway:
     name: Security Gateway
