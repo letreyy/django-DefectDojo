@@ -82,21 +82,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run OWASP ZAP baseline scan
+      - name: Run OWASP ZAP Full Scan
         run: |
-          docker run --rm -v $(pwd):/zap/wrk/:rw owasp/zap2docker-stable zap-baseline.py \
-            -t http://185.178.44.115:8080 -r zap_report.html || true
+          docker run --rm \
+            -u root \
+            -v $(pwd):/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable zap-full-scan.py \
+            -t http://185.178.44.115:8080 \
+            -r zap-report.html \
+            -x zap-report.xml || true
 
       - name: Upload ZAP report to DefectDojo
+        env:
+          DD_TOKEN: ${{ secrets.DD_TOKEN }}
         run: |
-          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
-            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
-            -H "Content-Type: multipart/form-data" \
+          echo "Uploading scan result to DefectDojo..."
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://185.178.44.115:8080/api/v2/import-scan/ \
+            -H "Authorization: Token $DD_TOKEN" \
+            -F "file=@zap-report.xml" \
             -F "scan_type=ZAP Scan" \
-            -F "file=@zap_report.html" \
-            -F "engagement=3" \
+            -F "engagement=1" \
+            -F "minimum_severity=Low" \
             -F "active=true" \
-            -F "verified=true"
+            -F "verified=true")
+
+          if [ "$RESPONSE" -eq "201" ]; then
+            echo "✅ Report uploaded successfully"
+          else
+            echo "❌ Failed to upload report to DefectDojo. HTTP Status: $RESPONSE"
+            exit 1
+          fi
 
   gateway:
     name: Security Gateway
