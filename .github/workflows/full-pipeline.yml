@@ -10,24 +10,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install bandit
       
       # SAST анализ
       - name: Run Bandit (SAST)
         run: |
-          pip install bandit
           bandit -r . -f json -o bandit-report.json || true
 
       # Загрузка отчёта в DefectDojo
       - name: Upload Bandit report to DefectDojo
+        env:
+          DD_TOKEN: ${{ secrets.DD_TOKEN }}
         run: |
-          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
-            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
-            -H "Content-Type: multipart/form-data" \
-            -F "scan_type=Bandit Scan" \
+          echo "Uploading Bandit scan result to DefectDojo..."
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://185.178.44.115:8080/api/v2/import-scan/ \
+            -H "Authorization: Token $DD_TOKEN" \
             -F "file=@bandit-report.json" \
-            -F "engagement=1" \
+            -F "scan_type=Bandit Scan" \
+            -F "engagement=2" \
+            -F "minimum_severity=Low" \
             -F "active=true" \
-            -F "verified=true"
+            -F "verified=true")
+
+          if [ "$RESPONSE" -eq "201" ]; then
+            echo "✅ Report uploaded successfully"
+          else
+            echo "❌ Failed to upload report to DefectDojo. HTTP Status: $RESPONSE"
+            exit 1
+          fi
 
   security-checks:
     name: Security Checks (Dependencies/Images)
