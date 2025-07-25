@@ -43,6 +43,12 @@ jobs:
             exit 1
           fi
 
+      - name: Upload Trivy artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-reports/report.json
+
   security-checks:
     name: Security Checks (Dependencies/Images)
     runs-on: ubuntu-latest
@@ -74,6 +80,12 @@ jobs:
             -F "engagement=2" \
             -F "active=true" \
             -F "verified=true"
+
+      - name: Upload Trivy artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-reports/report.json
 
   dast:
     name: Dynamic Analysis (DAST)
@@ -113,6 +125,12 @@ jobs:
             exit 1
           fi
 
+      - name: Upload ZAP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: zap_report.html
+
   gateway:
     name: Security Gateway
     runs-on: ubuntu-latest
@@ -120,12 +138,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Download Bandit artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bandit-report
+          path: reports
+
+      - name: Download Trivy artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: trivy-report
+          path: reports
+
+      - name: Download ZAP artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: zap-report
+          path: reports
+
       - name: Check for critical vulnerabilities
         run: |
-          CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-reports/report.json)
-          echo "Critical vulnerabilities: $CRITICAL_COUNT"
-          if [ "$CRITICAL_COUNT" -gt 0 ]; then
-            echo "❌ Found $CRITICAL_COUNT critical vulnerabilities. Blocking deployment."
+          echo "=== Checking Trivy ==="
+          TRIVY_CRIT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' reports/report.json || echo 0)
+          echo "Trivy critical vulnerabilities: $TRIVY_CRIT"
+
+          echo "=== Checking Bandit ==="
+          BANDIT_CRIT=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' reports/bandit-report.json || echo 0)
+          echo "Bandit critical (HIGH) issues: $BANDIT_CRIT"
+
+          echo "=== Checking ZAP ==="
+          ZAP_CRIT=$(grep -ci "High" reports/zap_report.html || echo 0)
+          echo "ZAP critical (High) issues: $ZAP_CRIT"
+
+          TOTAL=$((TRIVY_CRIT + BANDIT_CRIT + ZAP_CRIT))
+          echo "Total critical vulnerabilities: $TOTAL"
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "❌ Blocking deployment due to critical vulnerabilities."
             exit 1
           fi
 
