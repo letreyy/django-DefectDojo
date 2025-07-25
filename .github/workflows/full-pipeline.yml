@@ -1,0 +1,124 @@
+name: Full CI/CD Pipeline
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  sast:
+    name: Static Analysis (SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # SAST анализ
+      - name: Run Bandit (SAST)
+        run: |
+          pip install bandit
+          bandit -r . -f json -o bandit-report.json || true
+
+      # Загрузка отчёта в DefectDojo
+      - name: Upload Bandit report to DefectDojo
+        run: |
+          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
+            -H "Content-Type: multipart/form-data" \
+            -F "scan_type=Bandit Scan" \
+            -F "file=@bandit-report.json" \
+            -F "engagement=1" \
+            -F "active=true" \
+            -F "verified=true"
+
+  security-checks:
+    name: Security Checks (Dependencies/Images)
+    runs-on: ubuntu-latest
+    needs: sast
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install wget apt-transport-https gnupg lsb-release -y
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy -y
+
+      - name: Run Trivy (filesystem scan)
+        run: |
+          mkdir -p trivy-reports
+          trivy fs --format json -o trivy-reports/report.json . || true
+
+      - name: Upload Trivy report to DefectDojo
+        run: |
+          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
+            -H "Content-Type: multipart/form-data" \
+            -F "scan_type=Trivy Scan" \
+            -F "file=@trivy-reports/report.json" \
+            -F "engagement=2" \
+            -F "active=true" \
+            -F "verified=true"
+
+  dast:
+    name: Dynamic Analysis (DAST)
+    runs-on: ubuntu-latest
+    needs: security-checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run OWASP ZAP baseline scan
+        run: |
+          docker run --rm -v $(pwd):/zap/wrk/:rw owasp/zap2docker-stable zap-baseline.py \
+            -t http://185.178.44.115:8080 -r zap_report.html || true
+
+      - name: Upload ZAP report to DefectDojo
+        run: |
+          curl -X POST "http://185.178.44.115:8080/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DD_TOKEN }}" \
+            -H "Content-Type: multipart/form-data" \
+            -F "scan_type=ZAP Scan" \
+            -F "file=@zap_report.html" \
+            -F "engagement=3" \
+            -F "active=true" \
+            -F "verified=true"
+
+  gateway:
+    name: Security Gateway
+    runs-on: ubuntu-latest
+    needs: dast
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for critical vulnerabilities
+        run: |
+          CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-reports/report.json)
+          echo "Critical vulnerabilities: $CRITICAL_COUNT"
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "❌ Found $CRITICAL_COUNT critical vulnerabilities. Blocking deployment."
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH private key
+        run: |
+          echo "${{ secrets.SSH_KEY }}" > private_key
+          chmod 600 private_key
+
+      - name: Deploy to VPS
+        run: |
+          ssh -i private_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            cd ~/django-DefectDojo
+            git fetch origin
+            git reset --hard origin/master
+            docker compose pull
+            docker compose down
+            docker compose up -d
+          EOF
