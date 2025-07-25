@@ -43,11 +43,11 @@ jobs:
             exit 1
           fi
 
-      - name: Upload Trivy artifact
+      - name: Upload Bandit artifact
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-report
-          path: trivy-reports/report.json
+          name: bandit-report
+          path: bandit-report.json
 
   security-checks:
     name: Security Checks (Dependencies/Images)
