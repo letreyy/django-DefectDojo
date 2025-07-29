@@ -4,6 +4,7 @@
 
 ## **Структура пайплайна**
 
+Весь пайплайн запускается из .github/workflows/full-pipeline.yml
 Пайплайн состоит из 5 основных этапов:
 
 1. **SAST (Static Application Security Testing)**
